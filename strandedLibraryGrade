@@ -25,15 +25,17 @@ function help {
 	Usage:
 
 	If you already have the RNA-seq alignments in BAM format:
-		strandedLibraryGrade -b /path/to/alignments.bam [] 
+		strandedLibraryGrade -b /path/to/alignments.bam [-u] 
 
 	If you have transcript FASTA and paired reads produced by dUTP method of RNA-seq:
-		strandedLibraryGrade -t /path/to/transcripts.fasta -1 /path/to/R1.fastq.gz -2 /path/to/R2.fastq.gz [-m]
+		strandedLibraryGrade -t /path/to/transcripts.fasta -1 /path/to/R1.fastq.gz -2 /path/to/R2.fastq.gz [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
 
 	If you have transcript FASTA and unpaired reads produced by dUTP method of RNA-seq:
-		strandedLibraryGrade -t /path/to/transcripts.fasta -U /path/to/R1.fastq.gz [-m]
+		strandedLibraryGrade -t /path/to/transcripts.fasta -U /path/to/R1.fastq.gz [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
 
-
+	If you have a config text file specifying file locations of many BAMs or Fastqs (as explained below). All need to be same type (paired or unpaired).
+		strandedLibraryGrade -f /path/to/samples.txt [-u] [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
+	
 
 	Options:
 
@@ -41,12 +43,13 @@ function help {
 			  Thus, where relevant, do not tell alignmer the strandedness and/or orientation you expect. 
 			  Can be SAM format as well. SAMtools will aut-detect.
 			  Not compatible with -t/-1/-2/-U.
-	-u	BAMMODE: BAM was produced by mapping single-end unpaired reads. Default: false (assumed paired).
+	-u	BAMMODE: BAM was produced by mapping single-end unpaired reads. Default: false (assumed paired). Also may need to use this for FOFNMODE when using file full of single-end BAMs.
 	-t	FULLMODE: Bowtie2-indexed transcript (query) sequences. Also need -1/-2 or -U. Not compatible with -b.
 			  To make, do: 
 				bowtie2-build transcripts.fasta transcripts
 			  Provide /Path/to/bt2_index_prefix.
 			  In above example that would be /Path/to/transcripts
+			  NOTE: also needed in FOFNMODE for fastq files.
 	-1	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b and -U.
 	-2	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b and -U.
 	-U	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b, -1, and -2.
@@ -56,6 +59,12 @@ function help {
 	-S	Skip this many reads before processing. Currently only applies to bowtie2 step in FULLMODE. Default = 0.
 	-N	Only analyze this many reads. Currently only applies to bowtie2 step in FULLMODE. Default = all (1000000000).
 	-X	Max insert size (i.e. max fragment size). Currently only applies to bowtie2 step in FULLMODE with PAIRED reads. Default = 600.
+	-f	FOFNMODE: Process multiple samples serially.
+			Specify /path/to/samples.txt, a tab-delimited text file with 2-3 columns:
+			column1 = output prefix
+			column2 = R1 fastq (can be gz) or BAM. Note: if BAM of single-end reads, specify -u. If FASTQ, need to specify -t.
+			column3 = R2 fastq. Optional column for FULLMODE. Note: make sure to specify -t.
+	-v	Verbose. Say stuff. Only does stuff during FOFN mode at the moment.
 
 	Dependencies:
 	- Bowtie2
@@ -148,49 +157,50 @@ if [ $# -eq 0 ]; then help ; exit ; fi
 ##############################################################################
 ## DEFAULTS
 ##############################################################################
-INPUT_BAM=""
-TRANS=""
-CLEAN=true
-R1=""
-R2=""
-BT2=$( which bowtie2 )
-PAIRED=true
-RTYPE=pairs
-FULLMODE=false
-BAMMODE=false
-OUTPRE="strandedLibraryGradeOutput"
-THREADS=2
-SKIP=0
-NREADS=1000000000
-MAXINS=600
-HELP=false
+export INPUT_BAM=""
+export TRANS=""
+export CLEAN=true
+export R1=""
+export R2=""
+export BT2=$( which bowtie2 )
+export PAIRED=true
+export RTYPE=pairs
+export FULLMODE=false
+export BAMMODE=false
+export FOFNMODE=false
+export OUTPRE="strandedLibraryGradeOutput"
+export THREADS=2
+export SKIP=0
+export NREADS=1000000000
+export MAXINS=600
+export HELP=false
+export VERBOSE=false
 
-
-ALLVARS="INPUT_BAM TRANS CLEAN R1 R2 BT2 PAIRED FULLMODE BAMMODE"
+export ALLVARS="INPUT_BAM TRANS CLEAN R1 R2 BT2 PAIRED RTYPE FULLMODE BAMMODE FOFNMODE OUTPRE THREADS NREADS MAXINS"
 
 
 ##############################################################################
 ## GET OPTS
 ##############################################################################
-while getopts "b:ut:1:2:U:m:P" arg; do
+while getopts "b:ut:1:2:U:m:Pf:v" arg; do
     case $arg in
-        b) INPUT_BAM=${OPTARG} ; BAMMODE=true ;;
-	u) PAIRED=false ; RTYPE=reads ;;
-	t) TRANS=${OPTARG} ; FULLMODE=true ;;
-	1) R1=${OPTARG} ; FULLMODE=true ; PAIRED=true ; RTYPE=pairs ;;
-	2) R2=${OPTARG} ; FULLMODE=true ; PAIRED=true ; RTYPE=pairs ;;
-	U) R1=${OPTARG} ; FULLMODE=true ; PAIRED=false ; RTYPE=reads ;;
-	m) BT2=${OPTARG} ;;
-	O) OUTPRE=${OPTARG} ;;
-	P) THREADS=${OPTARG} ;;
-	S) SKIP=${OPTARG} ;;
-	N) NREADS=${OPTARG} ;;
-	X) MAXINS=${OPTARG} ;;
+        b) export INPUT_BAM=${OPTARG} ; export BAMMODE=true ;;
+	u) export PAIRED=false ; export RTYPE=reads ;;
+	t) export TRANS=${OPTARG} ; export FULLMODE=true ;;
+	1) export R1=${OPTARG} ; export FULLMODE=true ; export PAIRED=true ; export RTYPE=pairs ;;
+	2) export R2=${OPTARG} ; export FULLMODE=true ; export PAIRED=true ; export RTYPE=pairs ;;
+	U) export R1=${OPTARG} ; export FULLMODE=true ; export PAIRED=false ; export RTYPE=reads ;;
+	m) export BT2=${OPTARG} ;;
+	O) export OUTPRE=${OPTARG} ;;
+	P) export THREADS=${OPTARG} ;;
+	S) export SKIP=${OPTARG} ;;
+	N) export NREADS=${OPTARG} ;;
+	X) export MAXINS=${OPTARG} ;;
+	f) export FOFN=${OPTARG} ; FOFNMODE=true ;;
+	v) export VERBOSE=true ;;
         *) help; exit;;
     esac
 done
-
-####m) if [ ${OPTARG} == "which" ]; then MINIMAP2=$( which minimap2 ); else MINIMAP2=${OPTARG} ; fi ;;
 
 
 ## HELP CATCHALL <<not nec code given above>>
@@ -198,8 +208,11 @@ done
 if [ $# -eq 0 ]; then help ; exit ; fi
 if $FULLMODE && $BAMMODE; then echo "Specify only either -i or -t/-1/-2/-U" ; help ; exit ; fi
 if $BAMMODE ; then if [ -z $INPUT_BAM ]; then echo "Something is wrong. BAM mode on, but not BAM found." ; help; exit ; fi ; fi
-if $FULLMODE && $PAIRED ; then for VAR in TRANS R1 R2 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
-if $FULLMODE && ! $PAIRED ; then for VAR in TRANS R1 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+if $FULLMODE && $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 R2 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+if $FULLMODE && ! $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+if $FOFNMODE ; then INSPECT=( $( head -n 1 $FOFN ) ) ; if [ ${INSPECT[1]: -4} == ".bam" ]; then export BAMMODE=true ; else export FULLMODE=true ; fi ; fi
+if $FOFNMODE && $FULLMODE ; then if [ -z ${TRANS} ]; then echo "FOFN mode specified, BAMs not found in column2 of ${FOFN}, so FULLMODE assumed yet no bowtie2 index provided with -t. Try again. Exiting..." ; help ; exit ; fi ; fi
+if $FOFNMODE && $BAMMODE && $PAIRED ; then echo "WARN: assuming BAMs are from paired-end reads. If single-end reads, please specify -u. Script may die in flames." 1>&2 ; fi 
 
 ###################################################################################################################################################################################
 
@@ -309,7 +322,28 @@ fi
 ##############################################################################
 ## EXECUTE
 ##############################################################################
-OUT1=${OUTPRE}.transcript-summaries.txt
-OUT2=${OUTPRE}.final-summary.txt
-${FXN} > ${OUT1}
-finalSummary ${OUT1} > ${OUT2}
+function singleMode {
+  OUT1=${OUTPRE}.transcript-summaries.txt
+  OUT2=${OUTPRE}.final-summary.txt
+  if ${VERBOSE} ; then for VAR in OUT1 OUT2 FXN ; do echo -e "${VAR}\t${!VAR}" ; done ; fi
+  ${FXN} > ${OUT1}
+  finalSummary ${OUT1} > ${OUT2}
+}
+
+function fofnMode {
+  while read line ; do
+    ARR=( $( echo $line ) )
+    export OUTPRE=${ARR[0]}
+    export R1=${ARR[1]}
+    export BAM=${R1} ## if bammode
+    export R2=${ARR[2]}
+    if $VERBOSE ; then echo -e "${OUTPRE}\t${R1}\t${R2}" ; date ; fi
+    singleMode
+  done < ${FOFN}  
+}
+
+if $FOFNMODE ; then
+  fofnMode
+else
+  singleMode
+fi
