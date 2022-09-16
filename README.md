@@ -10,6 +10,7 @@ How well did your strand-specific RNA-seq library prep work?
 
 # Detailed Usage
 
+     
 	 STRANDED LIBRARY GRADE
 
                                    [mate2]->
@@ -18,20 +19,22 @@ How well did your strand-specific RNA-seq library prep work?
 		                                <-[mate1]
 
 
-	strandedLibraryGrade ${SLG_VERSION}
+	strandedLibraryGrade 0.0.1
 
 	Usage:
 
 	If you already have the RNA-seq alignments in BAM format:
-		strandedLibraryGrade -b /path/to/alignments.bam [] 
+		strandedLibraryGrade -b /path/to/alignments.bam [-u] 
 
 	If you have transcript FASTA and paired reads produced by dUTP method of RNA-seq:
-		strandedLibraryGrade -t /path/to/transcripts.fasta -1 /path/to/R1.fastq.gz -2 /path/to/R2.fastq.gz [-m]
+		strandedLibraryGrade -t /path/to/transcripts.fasta -1 /path/to/R1.fastq.gz -2 /path/to/R2.fastq.gz [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
 
 	If you have transcript FASTA and unpaired reads produced by dUTP method of RNA-seq:
-		strandedLibraryGrade -t /path/to/transcripts.fasta -U /path/to/R1.fastq.gz [-m]
+		strandedLibraryGrade -t /path/to/transcripts.fasta -U /path/to/R1.fastq.gz [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
 
-
+	If you have a config text file specifying file locations of many BAMs or Fastqs (as explained below). All need to be same type (paired or unpaired).
+		strandedLibraryGrade -f /path/to/samples.txt [-u] [-m] [-O prefix] [-P threads] [ -S skip ] [-N nreads ] [-X maxins ]
+	
 
 	Options:
 
@@ -39,11 +42,13 @@ How well did your strand-specific RNA-seq library prep work?
 			  Thus, where relevant, do not tell alignmer the strandedness and/or orientation you expect. 
 			  Can be SAM format as well. SAMtools will aut-detect.
 			  Not compatible with -t/-1/-2/-U.
+	-u	BAMMODE: BAM was produced by mapping single-end unpaired reads. Default: false (assumed paired). Also may need to use this for FOFNMODE when using file full of single-end BAMs.
 	-t	FULLMODE: Bowtie2-indexed transcript (query) sequences. Also need -1/-2 or -U. Not compatible with -b.
 			  To make, do: 
 				bowtie2-build transcripts.fasta transcripts
 			  Provide /Path/to/bt2_index_prefix.
 			  In above example that would be /Path/to/transcripts
+			  NOTE: also needed in FOFNMODE for fastq files.
 	-1	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b and -U.
 	-2	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b and -U.
 	-U	FULLMODE: Mate1 reads from paired reads. Provide: /path/to/R1.fastq.gz. Not compatible with -b, -1, and -2.
@@ -53,6 +58,12 @@ How well did your strand-specific RNA-seq library prep work?
 	-S	Skip this many reads before processing. Currently only applies to bowtie2 step in FULLMODE. Default = 0.
 	-N	Only analyze this many reads. Currently only applies to bowtie2 step in FULLMODE. Default = all (1000000000).
 	-X	Max insert size (i.e. max fragment size). Currently only applies to bowtie2 step in FULLMODE with PAIRED reads. Default = 600.
+	-f	FOFNMODE: Process multiple samples serially.
+			Specify /path/to/samples.txt, a tab-delimited text file with 2-3 columns:
+			column1 = output prefix
+			column2 = R1 fastq (can be gz) or BAM. Note: if BAM of single-end reads, specify -u. If FASTQ, need to specify -t.
+			column3 = R2 fastq. Optional column for FULLMODE. Note: make sure to specify -t.
+	-v	Verbose. Say stuff. Only does stuff during FOFN mode at the moment.
 
 	Dependencies:
 	- Bowtie2
@@ -73,7 +84,7 @@ How well did your strand-specific RNA-seq library prep work?
 
 	Use cases:
 	- Created RNA-seq library through the dUTP method (most stranded library prep kits).
-		- Expect the strandedness to be "ISR" as determined by Salmon.
+		- Expect the strandedness to be ISR as determined by Salmon.
 			- I = inward-facing.
 			- S = strand-specific.
 			- R = mate1 maps to reverse strand (i.e. the reverse complement of the transcript sequence).
@@ -96,7 +107,7 @@ How well did your strand-specific RNA-seq library prep work?
 				- It ranges from 0 to 1, 0 being the worst, 1 being perfect.
 				- >90% of transcripts should have scores >0.9
 					- some transcripts with very few reads mapping to them are often the culprits for having low scores.
-			- The last line is the global library score. It is named \"all\".
+			- The last line is the global library score. It is named "all".
 				- Columns 2, 3, and 4 are analogous to above only using confidently-mapped concordant read pairs mapping to all transcripts.
 		- final-summary.txt
 			- This is a 2-column tabular text file: 
@@ -120,16 +131,17 @@ How well did your strand-specific RNA-seq library prep work?
 				- All three scores are jointly affected by 
 					(i) experimental factors: factors upstream of analysis such as the strand-specificity of the library and sequencing, 
 					(ii) introduced factors: algorithmic choices, and reference quality.
-				- The "strandbias" gives all condidently-mapped concordant read pairs equal weights regardless of which transcript they map to.
-					- Therefore, "strandbias" is weighted much more heavily towards "experimental factors". 
+				- The strandbias gives all condidently-mapped concordant read pairs equal weights regardless of which transcript they map to.
+					- Therefore, strandbias is weighted much more heavily towards experimental factors. 
 				- The perfectBiasScore and transBiasScore give all transcripts equal weights. 
 					- Thus each transcript strand-specificity score is treated with equal confidence regardless of how few or many read pairs map to it.
 						- And regardless of how low or high quality the reference transcript sequence is...
-					- This weights the summary scores more heavily towards "introduced factors".
+					- This weights the summary scores more heavily towards introduced factors.
 					- Indeed, the transcripts with low strand-specificity scores may be suspect that should be flagged for manual annotation review and curation.
 						- They may also reflect regions of the genome with genes on both strands.
 					- Note that these scores can be interpreted as quantiles or percentiles over the transcripts.
 						- perfectBiasScore : the highest quantile one could ask for that would still return 1.
 						- transBiasScore   : the highest quantile one could ask for that would still return >0.9.
 		
+
 
