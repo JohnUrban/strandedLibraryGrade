@@ -1,15 +1,17 @@
-![logo](/img/logo.png)
+#!/bin/bash
+#set -e
 
-# strandedLibraryGrade
-How well did your strand-specific RNA-seq library prep work?
+export SLG_VERSION=0.0.1
+if [ $# -eq 1 ]; then if [ $1 == "--version" ]; then echo "strandedLibraryGrade version ${SGL_VERSION}, 20220916" ; exit ; fi ; fi
+
+SCRIPTDIR=$( dirname $0 )
+export COLLAPSE=${SCRIPTDIR}/utils/collapse.py
+export BT2=${SCRIPTDIR}/third_party/minimap2/minimap2
 
 
 
-
-
-
-# Detailed Usage
-
+function help {
+  echo "     
 	 STRANDED LIBRARY GRADE
 
                                    [mate2]->
@@ -132,4 +134,163 @@ How well did your strand-specific RNA-seq library prep work?
 						- perfectBiasScore : the highest quantile one could ask for that would still return 1.
 						- transBiasScore   : the highest quantile one could ask for that would still return >0.9.
 		
+"
+}
 
+
+## HELP CATCH NO ARGS
+###################################################################################################################################################################################
+if [ $# -eq 0 ]; then help ; exit ; fi
+###################################################################################################################################################################################
+
+
+##############################################################################
+## DEFAULTS
+##############################################################################
+INPUT_BAM=""
+TRANS=""
+CLEAN=true
+R1=""
+R2=""
+BT2=$( which bowtie2 )
+PAIRED=""
+FULLMODE=false
+BAMMODE=false
+OUTPRE="strandedLibraryGradeOutput"
+THREADS=2
+SKIP=0
+NREADS=1000000000
+MAXINS=600
+HELP=false
+
+
+ALLVARS="INPUT_BAM TRANS CLEAN R1 R2 BT2 PAIRED FULLMODE BAMMODE"
+
+
+##############################################################################
+## GET OPTS
+##############################################################################
+while getopts "b:t:1:2:U:m:P" arg; do
+    case $arg in
+        b) INPUT_BAM=${OPTARG} ; BAMMODE=true ;;
+	t) TRANS=${OPTARG} ; FULLMODE=true ;;
+	1) R1=${OPTARG} ; FULLMODE=true ; PAIRED=true ;;
+	2) R2=${OPTARG} ; FULLMODE=true ; PAIRED=true ;;
+	U) R1=${OPTARG} ; FULLMODE=true ; PAIRED=false ;;
+	m) BT2=${OPTARG} ;;
+	O) OUTPRE=${OPTARG} ;;
+	P) THREADS=${OPTARG} ;;
+	S) SKIP=${OPTARG} ;;
+	N) NREADS=${OPTARG} ;;
+	X) MAXINS=${OPTARG} ;;
+        *) help; exit;;
+    esac
+done
+
+####m) if [ ${OPTARG} == "which" ]; then MINIMAP2=$( which minimap2 ); else MINIMAP2=${OPTARG} ; fi ;;
+
+
+## HELP CATCHALL <<not nec code given above>>
+###################################################################################################################################################################################
+if [ $# -eq 0 ]; then help ; exit ; fi
+if $FULLMODE && $BAMMODE; then echo "Specify only either -i or -t/-1/-2/-U" ; help ; exit ; fi
+if $BAMMODE ; then if [ -z $INPUT_BAM ]; then echo "Something is wrong. BAM mode on, but not BAM found." ; help; exit ; fi ; fi
+if $FULLMODE && $PAIRED ; then for VAR in TRANS R1 R2 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+if $FULLMODE && ! $PAIRED ; then for VAR in TRANS R1 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+
+###################################################################################################################################################################################
+
+echo DEBUG: 1>&2
+for VAR in ${ALLVARS} ; do echo -e "${VAR}\t${!VAR}" 1>&2 ; done
+
+##############################################################################
+## FUNCTIONS
+##############################################################################
+
+
+function mapPairedReads {
+  ${BT2} --skip ${SKIP} --upto ${NREADS} --maxins ${MAXINS} --no-unal --no-contain --no-mixed --no-discordant --end-to-end -D 2 -R 0 -N 0 -L 32 -i S,0,5 -p 8 -x ${BT2TIDX} -1 ${R1} -2 ${R2} 
+}
+
+function mapUnpairedReads {
+  ${BT2} --skip ${SKIP} --upto ${NREADS} --no-unal --no-discordant --end-to-end -D 2 -R 0 -N 0 -L 32 -i S,0,5 -p 8 -x ${BT2TIDX} -U ${R1} 
+}
+
+function samFilter {
+  #samtools view -bSh -f 3 -F 4 -q 30 ${1}
+  samtools view -bh -f 3 -F 4 -q 30 ${1}
+}
+
+function bam2bedpe {
+  if [ $# -eq 0 ]; then IN="-" ; else IN=${1} ; fi
+  bamToBed -mate1 -bedpe -i ${1}
+}
+
+function transcriptSummaries {
+  awk 'BEGIN{all=0 ; allneg=0 }
+      {all+=1 ; total[$1]+=1 ; if($9=="-"){neg[$1]+=1 ; allneg+=1 }else{neg[$1]+=0}}
+      END{ for (e in total) print e"\t"total[e]"\t"neg[e]"\t"neg[e]/total[e] ; print "all\t"all"\t"allneg"\t"allneg/all}' ${1}
+####> ${TRANS}
+}
+
+function finalSummary {
+  awk '{if ($4==1){one+=1} ; 
+        if ($4>0.9){bias+=1} ; 
+        if ($1=="all"){readcount=$2 ; negcount=$3 ; poscount=$2-$3 ; readscore=$4}else{all+=1}}
+        END{OFS="\n" ; print "-\t"negcount, 
+                             "+\t"poscount, 
+                             "pairs\t"readcount, 
+                             "strandbias\t"readscore, 
+                             "perfectBiasTranscripts\t"one, 
+                             "biasedTranscripts\t"bias, 
+                             "nTranscripts\t"all, 
+                             "perfectBiasScore\t"one/all, 
+                             "transBiasScore\t"bias/all}' ${1}  
+###> ${SUMMA}
+}
+
+function gradeBam {
+	samFilter ${BAM} | bam2bedpe | transcriptSummaries
+}
+
+function gradePairedReads {
+  mapPairedReads | gradeBam
+}
+
+function gradeUnpairedReads {
+  mapUnpairedReads | gradeBam
+}
+
+
+##function strandedLibraryGrade 
+
+
+
+
+
+##############################################################################
+## EXECUTE ..... FINAL FUNCTION ASSIGNMENT
+##############################################################################
+## VARIABLE FUDGING
+BAM=${INPUT_BAM}
+BT2TIDX=${TRANS}
+
+if $BAMMODE ; then
+  export FXN=gradeBam
+elif $FULLMODE ; then
+  if $PAIRED ; then export FXN=gradePairedReads ;
+  else export FXN=gradeUnpairedReads 
+  fi
+else
+  echo "DEBUG::: Something wrong..... FXN assignment" ; exit
+fi
+
+
+
+##############################################################################
+## EXECUTE
+##############################################################################
+OUT1=${OUTPRE}.transcript-summaries.txt
+OUT2=${OUTPRE}.final-summary.txt
+${FXN} > ${OUT1}
+finalSummary ${OUT1} > ${OUT2}
