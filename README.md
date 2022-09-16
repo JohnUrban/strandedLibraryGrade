@@ -3,7 +3,7 @@
 # strandedLibraryGrade
 How well did your strand-specific RNA-seq library prep work?
 
-
+Get a score between 0 and 1.
 
 
 
