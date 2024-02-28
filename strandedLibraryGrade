@@ -182,7 +182,7 @@ export ALLVARS="INPUT_BAM TRANS CLEAN R1 R2 BT2 PAIRED RTYPE FULLMODE BAMMODE FO
 ##############################################################################
 ## GET OPTS
 ##############################################################################
-while getopts "b:ut:1:2:U:m:Pf:v" arg; do
+while getopts "b:ut:1:2:U:m:P:S:N:X:f:v" arg; do
     case $arg in
         b) export INPUT_BAM=${OPTARG} ; export BAMMODE=true ;;
 	u) export PAIRED=false ; export RTYPE=reads ;;
