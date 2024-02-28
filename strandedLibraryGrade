@@ -209,7 +209,7 @@ if [ $# -eq 0 ]; then help ; exit ; fi
 if $FULLMODE && $BAMMODE; then echo "Specify only either -i or -t/-1/-2/-U" ; help ; exit ; fi
 if $BAMMODE ; then if [ -z $INPUT_BAM ]; then echo "Something is wrong. BAM mode on, but not BAM found." ; help; exit ; fi ; fi
 if $FULLMODE && $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 R2 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
-if $FULLMODE && ! $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
+if $FULLMODE && ! $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full unpaired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
 if $FOFNMODE ; then INSPECT=( $( head -n 1 $FOFN ) ) ; if [ ${INSPECT[1]: -4} == ".bam" ]; then export BAMMODE=true ; else export FULLMODE=true ; fi ; fi
 if $FOFNMODE && $FULLMODE ; then if [ -z ${TRANS} ]; then echo "FOFN mode specified, BAMs not found in column2 of ${FOFN}, so FULLMODE assumed yet no bowtie2 index provided with -t. Try again. Exiting..." ; help ; exit ; fi ; fi
 if $FOFNMODE && $BAMMODE && $PAIRED ; then echo "WARN: assuming BAMs are from paired-end reads. If single-end reads, please specify -u. Script may die in flames." 1>&2 ; fi 
