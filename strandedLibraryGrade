@@ -206,6 +206,9 @@ done
 ## HELP CATCHALL <<not nec code given above>>
 ###################################################################################################################################################################################
 if [ $# -eq 0 ]; then help ; exit ; fi
+
+for VAR in ${ALLVARS} ; do echo -e "${VAR}\t${!VAR}" 1>&2 ;  done 
+
 if $FULLMODE && $BAMMODE; then echo "Specify only either -i or -t/-1/-2/-U" ; help ; exit ; fi
 if $BAMMODE ; then if [ -z $INPUT_BAM ]; then echo "Something is wrong. BAM mode on, but not BAM found." ; help; exit ; fi ; fi
 if $FULLMODE && $PAIRED && ! $FOFNMODE ; then for VAR in TRANS R1 R2 BT2 ; do if [ -z ${!VAR} ] ; then echo "Something is wrong. Full paired mode on, but ${VAR} not found." ; help; exit ; fi ; done ; fi
